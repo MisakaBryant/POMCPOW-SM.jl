@@ -120,3 +120,9 @@ Fields:
 
 
 Check out [VDPTag2.jl](https://github.com/zsunberg/VDPTag2.jl/blob/master/README.md) for an additional problem that is solved by POMCPOW. 
+
+---
+
+# POMCPOW-SM
+
+修改了`belief.jl`，新增了`solver4.jl`，实现了POMCPOW-SM算法，基于信念相似度合并观测分支。
