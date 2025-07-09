@@ -47,8 +47,8 @@ function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps
 
     r = Threads.Atomic{Float64}(0.0)
 
-    for i in 1:total
-        begin
+    Threads.@sync for i in 1:total
+        Threads.@spawn begin
             success = false
             while !success
                 try
