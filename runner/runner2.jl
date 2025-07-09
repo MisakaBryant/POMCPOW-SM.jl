@@ -12,6 +12,8 @@ using Logging, LoggingExtras
 using StaticArrays
 using LinearAlgebra
 
+include("../pomdps/LunarLander/po_lunar.jl")
+
 
 logger = TeeLogger(
     global_logger(),          # Current global logger (stderr)
@@ -45,8 +47,8 @@ function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps
 
     r = Threads.Atomic{Float64}(0.0)
 
-    Threads.@sync for i in 1:total
-        Threads.@spawn begin
+    for i in 1:total
+        begin
             success = false
             while !success
                 try
@@ -67,11 +69,11 @@ function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps
     return avg_total_reward
 end
 
-pomdp = LightDark1D()
-c = 90
-k_o = 5
-alpha_o = 1/15
-similarity_threshold = 0.99
+# pomdp = LightDark1D()
+# c = 90
+# k_o = 5
+# alpha_o = 1/15
+# similarity_threshold = 0.99
 
 # pomdp = SubHuntPOMDP()
 # c = 17
@@ -92,6 +94,14 @@ similarity_threshold = 0.99
 # k_o = 5
 # alpha_o = 1/100
 
+pomdp = LunarLander()
+c = 1
+k_o = 10
+alpha_o = 0.5
+k_a = 10
+alpha_a = 0.5
+similarity_threshold = 0.99
+
 # LightDark1D 需要注释掉
 # vs = ValueIterationSolver()
 # if !isdefined(Main, :vp) || vp.mdp != pomdp
@@ -100,7 +110,7 @@ similarity_threshold = 0.99
 # end
 rng = MersenneTwister(13)
 @show c, k_o, alpha_o, similarity_threshold
-tree_queries_list = [10000, 20000, 50000, 100000, 200000]
+tree_queries_list = [100, 200, 500, 1000, 2000, 5000, 10000, 20000]
 time_limit_list = [0.01, 0.1, 1.0, 5.0, 10.0]
 
 total_reward_list = []

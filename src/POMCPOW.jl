@@ -169,7 +169,7 @@ end
 function push_weighted!(::ParticleCollection, sp) end
 
 include("planner2.jl")
-include("solver2.jl")
+include("solver4.jl")
 
 function solve(solver::POMCPOWSolver, problem::POMDP)
     return POMCPOWPlanner(solver, problem)
