@@ -74,7 +74,7 @@ end
 
 function ParticleFilters.reweight!(wm::Vector, model::MyReweightModel, b, a, pm, o, rng)
     for i in 1:length(wm)
-        wm[i] = obs_weight(model.problem, b.particles[i], a, pm[i][1], o)  # 根据观测更新权重
+        wm[i] = POMDPTools.ModelTools.obs_weight(model.problem, b.particles[i], a, pm[i][1], o)  # 根据观测更新权重
     end
 end
 
@@ -98,7 +98,7 @@ function belief_update(::POWNodeFilter, p::POMDP{S,A,O}, b::Union{POWNodeBelief,
         # particles::Vector{S}
         belief = ParticleCollection([(rand(rng, b), 0.0) for i in 1:n])
     else
-        # particles::Vector{Tuple{S, Float64}
+        # particles::Vector{Tuple{S, Float64}}
         belief = ParticleCollection(b.dist.items)
         if n_particles(belief) != n
             n_belief = ParticleCollection([rand(rng, belief) for i in 1:n])

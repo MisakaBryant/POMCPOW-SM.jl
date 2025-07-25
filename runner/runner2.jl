@@ -13,6 +13,7 @@ using StaticArrays
 using LinearAlgebra
 
 include("../pomdps/LunarLander/po_lunar.jl")
+include("../pomdps/WindFarmPOMDP/SensorPlacementPhase/src/SensorPP.jl")
 
 
 logger = TeeLogger(
@@ -42,7 +43,7 @@ function trail(policy::Policy, pomdp::POMDP; max_steps=100)
     return discounted_reward(rhist)
 end
 
-function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps=100, total=1000)
+function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps=100, total=1)
     policy = solve(solver, pomdp)
 
     r = Threads.Atomic{Float64}(0.0)
@@ -60,6 +61,7 @@ function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps
                     # @warn "Error in thread $i: $e"
                     # Base.show_backtrace(stderr, catch_backtrace())
                 end
+                GC.gc()
             end
         end
     end
@@ -94,12 +96,20 @@ end
 # k_o = 5
 # alpha_o = 1/100
 
-pomdp = LunarLander()
+# pomdp = LunarLander()
+# c = 1
+# k_o = 10
+# alpha_o = 0.5
+# k_a = 10
+# alpha_a = 0.5
+# similarity_threshold = 0.99
+
+pomdp = WindFarmPOMDP()
 c = 1
-k_o = 10
-alpha_o = 0.5
-k_a = 10
-alpha_a = 0.5
+k_a=3.0
+alpha_a=0.3
+k_o=3.0
+alpha_o=0.3
 similarity_threshold = 0.99
 
 # LightDark1D 需要注释掉

@@ -1,5 +1,5 @@
 # 基于官方的 Julia 镜像
-FROM docker.m.daocloud.io/julia:latest
+FROM docker.io/julia:1.11.4
 
 # 设置工作目录
 WORKDIR /app
@@ -7,8 +7,11 @@ WORKDIR /app
 # 将 Project.toml 和 Manifest.toml 文件复制到工作目录
 COPY Project.toml Manifest.toml ./
 
+# 切换为清华源
 # 安装 lualatex 所需的依赖包
-RUN apt-get update && apt-get install -y \
+RUN sed -i 's|http://deb.debian.org/debian|https://mirrors.tuna.tsinghua.edu.cn/debian|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y \
     texlive-latex-base \
     texlive-latex-extra \
     texlive-latex-recommended \
