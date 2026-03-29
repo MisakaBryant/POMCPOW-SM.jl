@@ -83,27 +83,24 @@ struct MyResampler end
 
 function ParticleFilters.resample(::MyResampler, b::WeightedParticleBelief, model::MyPredictModel, reweight_model::MyReweightModel, b_prev, a, o, rng)
     if sum(b.weights) == 0.0
-        b.weights = ones(length(b.particles))  # 如果权重和为0，则将权重设置为全1，TODO:不正确的处理方法
+        b.weights = eps() .* ones(length(b.particles))  # 如果权重和为0，则将权重设置为全eps()极小正值
     end
-    # 使用重要性采样进行重采样
-    resampled_particles = sample(rng, b.particles, Weights(b.weights), length(b.particles))
-    return ParticleCollection(resampled_particles)
+    # # 使用重要性采样进行重采样
+    # resampled_particles = sample(rng, b.particles, Weights(b.weights), length(b.particles))
+    # return ParticleCollection(resampled_particles)
+    return b;
 end
 
 
 function belief_update(::POWNodeFilter, p::POMDP{S,A,O}, b::Union{POWNodeBelief, ParticleCollection}, a, o, n, rng) where {S,A,O}
-    # 如果粒子数不为n，则进行重采样
+    # 重采样
     # if root_belief
     if isa(b, ParticleCollection)
         # particles::Vector{S}
         belief = ParticleCollection([(rand(rng, b), 0.0) for i in 1:n])
     else
         # particles::Vector{Tuple{S, Float64}}
-        belief = ParticleCollection(b.dist.items)
-        if n_particles(belief) != n
-            n_belief = ParticleCollection([rand(rng, belief) for i in 1:n])
-            belief = n_belief
-        end
+        belief = ParticleCollection([rand(rng, b) for i in 1:n])
     end
     
     pf = BasicParticleFilter(MyPredictModel(p), MyReweightModel(p), MyResampler(), n, rng)
@@ -111,10 +108,10 @@ function belief_update(::POWNodeFilter, p::POMDP{S,A,O}, b::Union{POWNodeBelief,
     # basic 粒子滤波
     updated = ParticleFilters.update(pf, belief, a, o)
     
-    # 返回全1的权重
+    # 如果是 WeightedParticleBelief ，返回权重，如果是 ParticleCollection ，返回全1
     weights = ParticleFilters.weights(updated)
     # CategoricalVector中的权重以累积分布表示
-    cdf = 1:length(weights)
+    cdf = cumsum(weights) / sum(weights)
 
     updated_dist = CategoricalVector{Tuple{S,Float64}}(updated.particles, cdf)
 
