@@ -14,7 +14,7 @@ using LinearAlgebra
 
 include("../pomdps/LunarLander/po_lunar.jl")
 include("../pomdps/WindFarmPOMDP/SensorPlacementPhase/src/SensorPP.jl")
-
+include("../pomdps/WindFarmPOMDP/TurbinePlacementPhase/src/TurbinePP.jl")
 
 logger = TeeLogger(
     global_logger(),          # Current global logger (stderr)
@@ -23,21 +23,16 @@ logger = TeeLogger(
 
 global_logger(logger)
 
-# function trail(policy::Policy, pomdp::POMDP; max_steps=100)
-#     hr = HistoryRecorder(max_steps=max_steps)
-#     rhist = simulate(hr, pomdp, policy)
-#     # for (s, b, a, r, sp, o) in rhist
-#     #     @show s, a, r, sp
-#     # end
-
-#     return discounted_reward(rhist)
-# end
-
 function trail(policy::Policy, pomdp::POMDP; max_steps=100)
     total_reward = 0.0
 
     # 使用 stepthrough 逐步仿真
-    for (s, a, r, o, b, t, sp, bp) in stepthrough(pomdp, policy, "s,a,r,o,b,t,sp,bp", max_steps=max_steps)
+    wfparams = WindFieldBeliefParams()
+    up = updater(policy)
+    b0 = initialize_belief_lookup(wfparams)
+    s0 = initialize_state(b0, wfparams)
+    steps = hasfield(typeof(pomdp), :timesteps) ? pomdp.timesteps : max_steps
+    for (s, a, r, o, b, t, sp, bp) in stepthrough(pomdp, policy, up, b0, s0, "s,a,r,o,b,t,sp,bp", max_steps=steps)
         total_reward += r * discount(pomdp)^t  # 累加折扣奖励
         if isterminal(pomdp, sp)
             break
@@ -52,13 +47,8 @@ function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps
 
     r = Threads.Atomic{Float64}(0.0)
 
-    # -------------
     Threads.@sync for i in 1:total
         Threads.@spawn begin
-    # -------------
-    # for i in 1:total
-    #     begin
-    # -------------
             success = false
             while !success
                 try
@@ -67,10 +57,10 @@ function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps
                     atomic_add!(r, total_reward)
                     success = true
                 catch e
-                    @warn "Error in thread $i: $e"
-                    Base.show_backtrace(stderr, catch_backtrace())
-                    total -= 1
+                    # @warn "Error in thread $i: $e"
+                    # Base.show_backtrace(stderr, catch_backtrace())
                 end
+                GC.gc()
             end
         end
     end
@@ -80,56 +70,17 @@ function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps
     return avg_total_reward
 end
 
-# pomdp = LightDark1D()
-# c = 90
-# k_o = 5
-# alpha_o = 1/15
-# similarity_threshold = 0.99
-
-pomdp = SubHuntPOMDP()
-c = 17
-k_o = 6
-alpha_o = 1/100
+pomdp = WindFarmPOMDP()
+c = 30
+k_a = 3.0
+alpha_a = 0.3
+k_o = 3.0
+alpha_o = 0.3
 similarity_threshold = 0.99
 
-# pomdp = gen_lasertag(rng=MersenneTwister(7), robot_position_known=true)
-# c = 26 
-# k_o = 4 
-# alpha_o = 1/35
-# similarity_threshold = 0.99
-
-# pomdp = VDPTagPOMDP(mdp=VDPTagMDP(barriers=CardinalBarriers(0.2, 2.8)))
-# c = 110
-# k_a = 30
-# alpha_a = 1/30
-# k_o = 5
-# alpha_o = 1/100
-
-# pomdp = LunarLander()
-# c = 1
-# k_o = 10
-# alpha_o = 0.5
-# k_a = 10
-# alpha_a = 0.5
-# similarity_threshold = 0.99
-
-# pomdp = WindFarmPOMDP()
-# c = 1
-# k_a = 3.0
-# alpha_a = 0.3
-# k_o = 3.0
-# alpha_o = 0.3
-# similarity_threshold = 0.99
-
-# LightDark1D 需要注释掉
-vs = ValueIterationSolver()
-if !isdefined(Main, :vp) || vp.mdp != pomdp
-    mdp = UnderlyingMDP(pomdp)
-    vp = solve(vs, mdp)
-end
 rng = MersenneTwister(13)
 @show c, k_o, alpha_o, similarity_threshold
-tree_queries_list = [2000, 5000, 10000, 20000, 50000]
+tree_queries_list = [100, 200, 500, 1000, 2000, 5000, 10000, 20000]
 time_limit_list = [0.01, 0.1, 1.0, 5.0, 10.0]
 
 total_reward_list = []
@@ -140,24 +91,20 @@ for tree_queries in tree_queries_list
                             final_criterion=MaxTries(),
                             max_depth=20,
                             max_time=100,
-                            enable_action_pw=true, # 对于离散动作场景
-                            # enable_action_pw=true,  # |
-                            # k_action=k_a,           # | 对于连续动作场景
-                            # alpha_action=alpha_a,   # |
+                            # enable_action_pw=true, # 对于离散动作场景
+                            enable_action_pw=true,  # |
+                            k_action=k_a,           # | 对于连续动作场景
+                            alpha_action=alpha_a,   # |
                             k_observation=k_o,
                             alpha_observation=alpha_o,
-                            estimate_value=FOValue(vp),
+                            # estimate_value=FOValue(vp),
                             check_repeat_obs=true,
                             # default_action=ReportWhenUsed(-1),
                             rng=rng,
                             similarity_threshold=similarity_threshold    # 观测相似度阈值，check_repeat_obs为true时有效
                             )
-    ADR = solve_and_evaluate(solver, pomdp)
+    ADR = solve_and_evaluate(solver, pomdp; total=2)
     @info "Total reward with $tree_queries tree queries: ", ADR
     # @info "Total reward with $time_limit s limit: ", ADR
     push!(total_reward_list, ADR)
 end
-
-# p = plot(tree_queries_list, total_reward_list, label="Total reward", xlabel="Tree queries", ylabel="Total reward", title="Total reward with different tree queries")
-
-# png(p, "POMCPOW_SubHunt")

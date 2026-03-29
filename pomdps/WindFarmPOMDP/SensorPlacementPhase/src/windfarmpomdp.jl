@@ -7,7 +7,7 @@ struct WindFarmPOMDP <: POMDP{WindFarmState, CartesianIndex{3}, Vector{Float64}}
     delta::Int          # Minimum distance between actions
 end
 
-WindFarmPOMDP() = WindFarmPOMDP(20, 20, 220, [100, 150, 200], 10, 1)
+WindFarmPOMDP() = WindFarmPOMDP(20, 20, 220, [100, 150, 200], 5, 220*4)
 
 WindFarmPOMDP(wfparams, no_of_sensors, delta) = WindFarmPOMDP(wfparams.nx, wfparams.ny, wfparams.grid_dist, wfparams.altitudes, no_of_sensors, delta)
 
@@ -40,6 +40,7 @@ function POMDPs.gen(m::WindFarmPOMDP, s ::WindFarmState, a0::CartesianIndex{3}, 
     # Transform the action location to Vector
     a = expand_action_to_below_altitudes(a0, m.altitudes)
     a = CartIndices_to_Array(a)
+    tlparams = TurbineLayoutParams()
     wfparams = WindFieldBeliefParams()
     
     # Get observations

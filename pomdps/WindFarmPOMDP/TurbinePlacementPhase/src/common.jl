@@ -26,7 +26,7 @@ abstract type TurbineLayoutType end
     turbine_power_curve::Polynomial = create_power_curve()      # [kW, given windspeed]
 end
 
-function create_power_curve(poly_degree::Int = 3, data_dir = "../../TurbinePlacementPhase/data/ge_turbine_data.csv")
+function create_power_curve(poly_degree::Int = 3, data_dir = "pomdps/WindFarmPOMDP/TurbinePlacementPhase/data/ge_turbine_data.csv")
     power_data = DelimitedFiles.readdlm(data_dir, Float64, comments=true, comment_char='#')
     speed_ms, power_kW = eachcol(power_data)
     curve_fit = Polynomials.fit(speed_ms, power_kW, poly_degree)
@@ -97,6 +97,7 @@ function is_solution_separated_Int(x_turbines, tlparams)
             idx_complement = setdiff(idx_set, collect(1:idx))
             x_turbines_complement = x_turbines[:, idx_complement]
             η = get_seperation_heuristic.(Ref(xi), eachcol(x_turbines_complement), Ref(ui), Ref(uj), Ref(dia))
+            η = collect(Float64, η)
             d = euclidean_dist.(Ref(xi), eachcol(x_turbines_complement))
             sep = sep + sum(η .≥ d) 
         end
@@ -144,13 +145,13 @@ function remove_same_coordinate_locations(X_field, x_turbines)
     return X_field[:, locs_complement]
 end
 
-function get_tower_cost(a)
+function get_tower_cost(a, tlparams::TurbineLayoutParams)
 """ Get the cost of a single mast (sensor) tower. """
     height = a[end]
     return height * tlparams.mast_cost
 end
 
-function get_turbine_cost(a)
+function get_turbine_cost(a, tlparams::TurbineLayoutParams)
 """ Get the cost of a single turbine. """
     return tlparams.turbine_cost
 end
@@ -211,8 +212,8 @@ function turbine_approximate_profits(x_turbines::AbstractMatrix, gpla_wf, tlpara
     μ, σ² = GaussianProcesses.predict_f(gpla_wf, x_turbines)
     σ = sqrt.(σ²)
     N_samples = max(1, length(gpla_wf.y))
-    
-    costs = get_turbine_cost.(eachcol(x_turbines))
+
+    costs = get_turbine_cost.(eachcol(x_turbines), Ref(tlparams))
     s_avg = get_average_turbine_distances(x_turbines) / tlparams.turbine_diameter
     profits = get_turbine_profit.(μ, σ, costs, Ref(s_avg), Ref(N_samples), Ref(tlparams))
 
@@ -224,7 +225,7 @@ function get_layout_profit(sp::WindFarmState, gpla_wf::GPLA, tlparams::TurbineLa
 """ Calculate approximate profit of a turbine layout. """
     # Cost of sensor tower placements
     x_sensors = sp.x_acts
-    cost_masts = get_tower_cost.(eachcol(x_sensors))
+    cost_masts = get_tower_cost.(eachcol(x_sensors), Ref(tlparams))
 
     # Profit of turbine placements
     x_turbines, _ = get_turbine_layout(gpla_wf, tlparams, wfparams, layouttype)
@@ -251,8 +252,8 @@ function turbine_ground_profits(x_turbines::AbstractMatrix, x_obs_full, y_obs_fu
     _, σ² = GaussianProcesses.predict_f(gpla_wf, x_turbines)
     σi_vals = sqrt.(σ²)
     N_samples = max(1, length(gpla_wf.y))
-    
-    costs = get_turbine_cost.(eachcol(x_turbines))
+
+    costs = get_turbine_cost.(eachcol(x_turbines), Ref(tlparams))
     s_avg = get_average_turbine_distances(x_turbines) / tlparams.turbine_diameter
     profits = get_turbine_profit.(ui_vals, σi_vals, costs, Ref(s_avg), Ref(N_samples), Ref(tlparams))   #L305.
 
@@ -269,7 +270,7 @@ function get_ground_truth_profit(states_history::AbstractArray, tlparams::Turbin
     # Cost of sensor tower placements
     s_final = states_history[end]
     x_sensors = s_final.x_acts
-    cost_masts = get_tower_cost.(eachcol(x_sensors))
+    cost_masts = get_tower_cost.(eachcol(x_sensors), Ref(tlparams))
 
     # Get belief and ground truth
     x_obs_full = s_final.x_obs_full
@@ -293,8 +294,8 @@ function get_ground_truth_profit(s0::WindFarmState, x_sensors::AbstractArray, tl
     Random.seed!(wfparams.noise_seed)
 
     # Cost of sensor tower placements
-    cost_masts = get_tower_cost.(eachcol(x_sensors))
-    
+    cost_masts = get_tower_cost.(eachcol(x_sensors), Ref(tlparams))
+
     # Get ground truth
     x_obs_full = s0.x_obs_full
     y_obs_full = s0.y_obs_full
