@@ -1,43 +1,58 @@
-# function obsSimilar(::POMDP{S,A,O}, ::O, ::O, similarity_threshold::Float64) where {S,A,O}
-#     return o1 == o2
-# end
+const BELIEF_SIMILARITY_LOG_LOCK = ReentrantLock()
 
-# function findSimilarKey(pomdp::POMDP, dict::Dict, k, similarity_threshold::Float64)
-#     for key in keys(dict)
-#         if obsSimilar(pomdp, key[2], k[2], similarity_threshold)
-#             return key
-#         end
-#     end
-#     return nothing
-# end
+function belief_similarity_log_path()
+    task_path = task_local_storage(:pomcpow_belief_log_path)
+    if task_path !== nothing
+        return String(task_path)
+    end
+    return get(ENV, "POMCPOW_BELIEF_SIM_LOG", "belief_similarity.log")
+end
+
+function log_belief_similarity(similarity::Float64, n_particles1::Int, n_particles2::Int)
+    lock(BELIEF_SIMILARITY_LOG_LOCK)
+    try
+        open(belief_similarity_log_path(), "a") do io
+            println(io, string(similarity, ",", n_particles1, ",", n_particles2))
+        end
+    finally
+        unlock(BELIEF_SIMILARITY_LOG_LOCK)
+    end
+end
 
 function beliefSimilar(b1::POWNodeBelief, b2::POWNodeBelief; similarity_threshold::Float64 = 0.9)
     # 1. 提取粒子集合
     particles1 = b1.dist.items  # 粒子集合 1
     particles2 = b2.dist.items  # 粒子集合 2
-    # 2. 统计每个状态的频率，并构造频率向量
-    freq1 = Dict()
-    freq2 = Dict()
-    for p in particles1
-        freq1[p] = get(freq1, p, 0) + 1
+    n_particles1 = length(particles1)
+    n_particles2 = length(particles2)
+    # 2. 统计每个状态的权重，并构造权重向量
+    weight1 = Dict()
+    weight2 = Dict()
+    for i in 1:length(particles1)
+        p = particles1[i]
+        weight1[p] = get(weight1, p, 0) + b1.dist.cdf[i] - (i > 1 ? b1.dist.cdf[i-1] : 0)
     end
-    for p in particles2
-        freq2[p] = get(freq2, p, 0) + 1
+    for i in 1:length(particles2)
+        p = particles2[i]
+        weight2[p] = get(weight2, p, 0) + b2.dist.cdf[i] - (i > 1 ? b2.dist.cdf[i-1] : 0)
     end
     # 3. 获取所有可能的状态集合
-    all_states = union(keys(freq1), keys(freq2))
-    # 4. 构造频率向量
-    v1 = [get(freq1, s, 0) for s in all_states]
-    v2 = [get(freq2, s, 0) for s in all_states]
+    all_states = union(keys(weight1), keys(weight2))
+    # 4. 构造权重向量
+    v1 = [get(weight1, s, 0) for s in all_states]
+    v2 = [get(weight2, s, 0) for s in all_states]
     # 5. 计算余弦相似度
     dot_product = dot(v1, v2)  # 向量点积
     norm1 = norm(v1)           # 向量 1 的范数
     norm2 = norm(v2)           # 向量 2 的范数
     # 避免除以零
     if norm1 == 0.0 || norm2 == 0.0
-        return 0.0  # 如果任一向量为空，返回相似度为 0
+        # log_belief_similarity(0.0, n_particles1, n_particles2)
+        return false
     end
     similarity = dot_product / (norm1 * norm2)
+    # log_belief_similarity(similarity, n_particles1, n_particles2)
+    # @show similarity
     # 6. 判断是否超过相似度阈值
     return similarity >= similarity_threshold
 end
@@ -118,9 +133,9 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
                 b = tree.root_belief
             end
             updated_belief = belief_update(pomcp.node_sr_belief_updater, 
-                                            pomcp.problem, b, a, o, 10, sol.rng)
+                                            pomcp.problem, b, a, o, 50, sol.rng)
 
-            # TODO: 判断信念状态是否相似
+            # 判断信念状态是否相似
             similar_belief = false
             if sol.check_repeat_obs
                 for pair in tree.generated[best_node]
@@ -165,6 +180,8 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
         pair = rand(sol.rng, tree.generated[best_node])
         o = pair.first
         hao = pair.second
+
+        push_weighted!(tree.sr_beliefs[hao], pomcp.node_sr_belief_updater, s, sp, r)
 
         # 采样一个状态
         sp, r = rand(sol.rng, tree.sr_beliefs[hao])

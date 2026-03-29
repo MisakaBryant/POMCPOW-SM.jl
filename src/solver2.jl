@@ -1,16 +1,3 @@
-function obsSimilar(::POMDP{S,A,O}, ::O, ::O, similarity_threshold::Float64) where {S,A,O}
-    return o1 == o2
-end
-
-function findSimilarKey(pomdp::POMDP, pairs::Vector, o, similarity_threshold::Float64)
-    for pair in pairs
-        if obsSimilar(pomdp, pair.first, o, similarity_threshold)
-            return pair
-        end
-    end
-    return nothing
-end
-
 function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d) where {B,S,A,O}
 
     tree = h_node.tree
