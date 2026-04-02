@@ -1,4 +1,4 @@
-function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d) where {B,S,A,O}
+function simulate_solver2(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d) where {B,S,A,O}
 
     tree = h_node.tree
     h = h_node.node
@@ -97,7 +97,7 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
         push_weighted!(tree.sr_beliefs[hao], pomcp.node_sr_belief_updater, s, sp, r)
         # 采样一个状态
         sp, r = rand(sol.rng, tree.sr_beliefs[hao])
-        R = r + POMDPs.discount(pomcp.problem)*simulate(pomcp, POWTreeObsNode(tree, hao), sp, d-1)
+        R = r + POMDPs.discount(pomcp.problem)*simulate_solver2(pomcp, POWTreeObsNode(tree, hao), sp, d-1)
     end
 
     tree.n[best_node] += 1

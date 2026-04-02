@@ -44,10 +44,15 @@ export
     sr_belief,
     isroot,
 
+    SOLVER2,
+    SOLVER4,
+
     POMCPOWVisualizer,
     blink
 
 const init_V = init_Q
+const SOLVER2 = :solver2
+const SOLVER4 = :solver4
 
 include("categorical_vector.jl")
 include("beliefs.jl")
@@ -163,13 +168,25 @@ Fields:
     timer::T                    = () -> 1e-9*time_ns()
 
     similarity_threshold::Float64 = 0.9
+    algorithm::Symbol           = SOLVER4
 end
 
 # unweighted ParticleCollections don't get anything pushed to them
 function push_weighted!(::ParticleCollection, sp) end
 
 include("planner2.jl")
+include("solver2.jl")
 include("solver4.jl")
+
+function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d) where {B,S,A,O}
+    if pomcp.solver.algorithm == SOLVER2
+        return simulate_solver2(pomcp, h_node, s, d)
+    elseif pomcp.solver.algorithm == SOLVER4
+        return simulate_solver4(pomcp, h_node, s, d)
+    else
+        error("Unknown solver algorithm: $(pomcp.solver.algorithm). Use :solver2 or :solver4.")
+    end
+end
 
 function solve(solver::POMCPOWSolver, problem::POMDP)
     return POMCPOWPlanner(solver, problem)

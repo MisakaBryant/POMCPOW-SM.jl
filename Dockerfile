@@ -1,5 +1,5 @@
 # 基于官方的 Julia 镜像
-FROM docker.io/julia:1.11.4
+FROM docker.1ms.run/julia:1.12.5
 
 # 设置工作目录
 WORKDIR /app
@@ -22,8 +22,6 @@ RUN sed -i 's|http://deb.debian.org/debian|https://mirrors.tuna.tsinghua.edu.cn/
     lmodern \
     pdf2svg \
     libgtk-3-dev \
-    libcanberra-gtk-module \
-    libcanberra-gtk3-module \
     xvfb \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -31,9 +29,6 @@ RUN sed -i 's|http://deb.debian.org/debian|https://mirrors.tuna.tsinghua.edu.cn/
 # 安装 Project.toml 中的依赖包
 RUN julia --project=. -e 'import Pkg; Pkg.instantiate()'
 
-# 设置默认的启动命令（可以根据需要修改）
-CMD ["julia", "--project=.", "runner/runner2.jl"]
-
-# docker run --name pomdp -it -v .:/app pomdp:1.2 /bin/bash
+# docker run --name pomcpow-sm -it -v .:/app pomcpow-sm:1.0 /bin/bash
 
 # xvfb-run julia --threads 24 --project=. runner/runner2.jl

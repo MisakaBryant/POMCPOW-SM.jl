@@ -23,12 +23,21 @@ function trail(policy::Policy, pomdp::POMDP; max_steps=100)
     return total_reward
 end
 
-pomdp = SubHuntPOMDP()
-c = 17
-k_o = 6
-alpha_o = 1/100
+pomdp = LightDark1D()
+c = 90
+k_o = 5
+alpha_o = 1/15
 similarity_threshold = 0.99
-const SCENARIO_NAME = "SubHunt"
+const SCENARIO_NAME = "LightDark"
+tree_queries_list = [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000]
+
+# pomdp = SubHuntPOMDP()
+# c = 17
+# k_o = 6
+# alpha_o = 1/100
+# similarity_threshold = 0.99
+# const SCENARIO_NAME = "SubHunt"
+# tree_queries_list = [5000, 10000, 20000, 50000, 80000]
 
 const BIN_EDGES = [0.0, 0.5, 0.7, 0.8, 0.9, 0.95, 0.99, 1.0]
 
@@ -273,4 +282,4 @@ function run_query_suite(; query_values::Vector{Int}, n_trials::Int=5, base_seed
     println("\nAll query suites finished.")
 end
 
-run_query_suite(query_values=[10000, 20000, 50000, 80000, 100000], n_trials=5, base_seed=13)
+run_query_suite(query_values=tree_queries_list, n_trials=5, base_seed=13)

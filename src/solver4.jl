@@ -57,7 +57,7 @@ function beliefSimilar(b1::POWNodeBelief, b2::POWNodeBelief; similarity_threshol
     return similarity >= similarity_threshold
 end
 
-function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d) where {B,S,A,O}
+function simulate_solver4(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d) where {B,S,A,O}
     
 
     tree = h_node.tree
@@ -185,7 +185,7 @@ function simulate(pomcp::POMCPOWPlanner, h_node::POWTreeObsNode{B,A,O}, s::S, d)
 
         # 采样一个状态
         sp, r = rand(sol.rng, tree.sr_beliefs[hao])
-        R = r + POMDPs.discount(pomcp.problem)*simulate(pomcp, POWTreeObsNode(tree, hao), sp, d-1)
+        R = r + POMDPs.discount(pomcp.problem)*simulate_solver4(pomcp, POWTreeObsNode(tree, hao), sp, d-1)
     end
 
     tree.n[best_node] += 1
