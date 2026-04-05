@@ -126,3 +126,39 @@ Check out [VDPTag2.jl](https://github.com/zsunberg/VDPTag2.jl/blob/master/README
 # POMCPOW-SM
 
 修改了`belief.jl`，新增了`solver4.jl`，实现了POMCPOW-SM算法，基于信念相似度合并观测分支。
+
+## 实验运行方式
+
+以下命令在项目根目录执行：
+
+```powershell
+julia --project=. .\runner\runner2.jl POMCPOW
+julia --project=. .\runner\runner2.jl SM
+julia --project=. .\runner\runner2.jl
+```
+
+`runner2.jl` 支持通过参数选择 solver：
+
+- `POMCPOW`：对应 `SOLVER2`
+- `SM`：对应 `SOLVER4`
+
+IPFT 请使用独立评估入口：
+
+```powershell
+julia --project=. .\runner\ipft_runner.jl
+```
+
+## 输出文件
+
+结果默认输出到 `runner/results/`，包括：
+
+- `reward_stats_by_tree_queries_*.csv`
+- `reward_summary_vs_tree_queries_*.png`
+- `reward_distribution_histograms_*.png`
+
+统计口径包含：`n/min/max/mean/var/std/se`，其中 `se` 为标准误（`std/sqrt(n)`）。
+
+## 备注
+
+- `runner2.jl` 与 `ipft_runner.jl` 采用同一统计格式，便于横向比较。
+- 若出现 `POMCPOWPlanner` 在 `Main` 中扩展的 warning，这是命名冲突提示，不影响主流程结果输出。

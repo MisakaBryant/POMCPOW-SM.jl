@@ -18,7 +18,6 @@ using Plots
 include("../pomdps/LunarLander/po_lunar.jl")
 include("../pomdps/WindFarmPOMDP/SensorPlacementPhase/src/SensorPP.jl")
 
-
 logger = TeeLogger(
     global_logger(),          # Current global logger (stderr)
     FileLogger("output.log"; append=true) # FileLogger writing to output.log
@@ -64,7 +63,7 @@ function summarize_rewards(rewards::Vector{Float64})
     )
 end
 
-function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps=100, total=1000, max_retries=5)
+function solve_and_evaluate(solver, pomdp::POMDP; max_steps=100, total=1000, max_retries=5)
     policy = solve(solver, pomdp)
     rewards = fill(NaN, total)
 
@@ -78,16 +77,16 @@ function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps
             success = false
             tries = 0
             while !success && tries < max_retries
-                try
+                # try
                     tries += 1
                     local_policy = deepcopy(policy)
                     total_reward = trail(local_policy, pomdp, max_steps=max_steps)
                     rewards[i] = total_reward
                     success = true
-                catch e
-                    @warn "Error in thread $i: $e"
-                    Base.show_backtrace(stderr, catch_backtrace())
-                end
+                # catch e
+                #     @warn "Error in thread $i: $e"
+                #     Base.show_backtrace(stderr, catch_backtrace())
+                # end
             end
             if !success
                 @warn "Trial $i failed after $max_retries retries."
@@ -101,6 +100,31 @@ function solve_and_evaluate(solver::AbstractPOMCPSolver, pomdp::POMDP; max_steps
     return summarize_rewards(valid_rewards), valid_rewards
 end
 
+function parse_solver_modes(args::Vector{String})
+    supported = Set(["POMCPOW", "SM"])
+    if isempty(args)
+        return ["POMCPOW", "SM"]
+    end
+
+    parsed = String[]
+    for arg in args
+        for token in split(arg, ',')
+            mode = uppercase(strip(token))
+            isempty(mode) && continue
+            if mode in supported
+                push!(parsed, mode)
+            elseif mode == "IPFT"
+                error("IPFT mode has been removed from runner2.jl. Please run .\\runner\\ipft_runner.jl for IPFT experiments.")
+            else
+                error("Unknown solver mode: $mode. Supported modes are POMCPOW, SM.")
+            end
+        end
+    end
+
+    isempty(parsed) && error("No valid solver mode provided. Use POMCPOW or SM.")
+    return unique(parsed)
+end
+
 # pomdp = LightDark1D()
 # c = 90
 # k_o = 5
@@ -110,7 +134,7 @@ end
 
 pomdp = SubHuntPOMDP()
 c = 17
-k_o = 6
+k_o = 6.0
 alpha_o = 1/100
 similarity_threshold = 0.99
 tree_queries_list = [5000, 10000, 20000, 50000, 80000]
@@ -136,6 +160,7 @@ tree_queries_list = [5000, 10000, 20000, 50000, 80000]
 # k_a = 10
 # alpha_a = 0.5
 # similarity_threshold = 0.99
+# tree_queries_list = [500, 1000, 2000, 3000, 5000, 8000, 10000]
 
 # pomdp = WindFarmPOMDP()
 # c = 1
@@ -160,39 +185,61 @@ total = 1000
 results_dir = joinpath(@__DIR__, "results")
 mkpath(results_dir)
 
-# --------------
-for algorithm in (SOLVER2, SOLVER4)
-# --------------
-# begin
-#     algorithm = SOLVER2
-# --------------
+selected_solver_modes = parse_solver_modes(ARGS)
+@info "Selected solver modes=$(join(selected_solver_modes, ","))"
+
+for solver_mode in selected_solver_modes
     stats_table = NamedTuple[]
     all_rewards_by_query = Dict{Int, Vector{Float64}}()
-    algo_name = String(algorithm)
+    algo_name = solver_mode
     algo_rng = MersenneTwister(13)
 
     @info "Running experiment with algorithm=$algo_name"
 
     for tree_queries in tree_queries_list
-        solver = POMCPOWSolver(tree_queries=tree_queries,
-                                criterion=MaxUCB(c),
-                                final_criterion=MaxTries(),
-                                max_depth=20,
-                                max_time=100,
-                                enable_action_pw=false, # 对于离散动作场景
-                                # enable_action_pw=true,  # |
-                                # k_action=k_a,           # | 对于连续动作场景
-                                # alpha_action=alpha_a,   # |
-                                k_observation=k_o,
-                                alpha_observation=alpha_o,
-                                estimate_value=FOValue(vp),
-                                check_repeat_obs=true,
-                                # default_action=ReportWhenUsed(-1),
-                                rng=algo_rng,
-                                similarity_threshold=similarity_threshold,   # 观测相似度阈值，check_repeat_obs为true时有效
-                                algorithm=algorithm
-                                )
+        solver = if solver_mode == "POMCPOW"
+            POMCPOWSolver(tree_queries=tree_queries,
+                        criterion=MaxUCB(c),
+                        final_criterion=MaxTries(),
+                        max_depth=20,
+                        max_time=100,
+                        enable_action_pw=false, # 对于离散动作场景
+                        # enable_action_pw=true,  # |
+                        # k_action=k_a,           # | 对于连续动作场景
+                        # alpha_action=alpha_a,   # |
+                        k_observation=k_o,
+                        alpha_observation=alpha_o,
+                        estimate_value=FOValue(vp),
+                        check_repeat_obs=true,
+                        rng=algo_rng,
+                        similarity_threshold=similarity_threshold,
+                        algorithm=SOLVER2)
+        elseif solver_mode == "SM"
+            POMCPOWSolver(tree_queries=tree_queries,
+                        criterion=MaxUCB(c),
+                        final_criterion=MaxTries(),
+                        max_depth=20,
+                        max_time=100,
+                        enable_action_pw=false,  # 对于离散动作场景
+                        # enable_action_pw=true,  # |
+                        # k_action=k_a,           # | 对于连续动作场景
+                        # alpha_action=alpha_a,   # |
+                        k_observation=k_o,
+                        alpha_observation=alpha_o,
+                        estimate_value=FOValue(vp),
+                        check_repeat_obs=true,
+                        rng=algo_rng,
+                        similarity_threshold=similarity_threshold,
+                        algorithm=SOLVER4)
+        else
+            error("Unsupported solver mode: $solver_mode")
+        end
+
+        stats = nothing
+        rewards = Float64[]
         stats, rewards = solve_and_evaluate(solver, pomdp, total=total)
+
+
         @info @sprintf("algorithm=%s, tree_queries=%d, n=%d, min=%.4f, max=%.4f, mean=%.4f, var=%.4f, std=%.4f, se=%.4f",
                        algo_name, tree_queries, stats.n, stats.min, stats.max, stats.mean, stats.var, stats.std, stats.se)
         push!(stats_table, (
@@ -208,6 +255,11 @@ for algorithm in (SOLVER2, SOLVER4)
         all_rewards_by_query[tree_queries] = rewards
     end
 
+    if isempty(stats_table)
+        @warn "No valid results for algorithm=$algo_name, skip CSV/plot generation."
+        continue
+    end
+
     stats_csv_path = joinpath(results_dir, "reward_stats_by_tree_queries_$(algo_name).csv")
     open(stats_csv_path, "w") do io
         write(io, "tree_queries,n,min,max,mean,var,std,se\n")
@@ -217,12 +269,13 @@ for algorithm in (SOLVER2, SOLVER4)
         end
     end
 
+    valid_queries = [row.tree_queries for row in stats_table]
     mean_list = [row.mean for row in stats_table]
     se_list = [row.se for row in stats_table]
     min_list = [row.min for row in stats_table]
     max_list = [row.max for row in stats_table]
 
-    p_summary = plot(tree_queries_list, mean_list,
+    p_summary = plot(valid_queries, mean_list,
                      yerror=se_list,
                      marker=:circle,
                      linewidth=2,
@@ -230,8 +283,8 @@ for algorithm in (SOLVER2, SOLVER4)
                      xlabel="Tree queries",
                      ylabel="Discounted reward",
                      title="[$(algo_name)] Reward statistics over $(total) trials")
-    scatter!(p_summary, tree_queries_list, min_list, marker=:diamond, label="Min")
-    scatter!(p_summary, tree_queries_list, max_list, marker=:utriangle, label="Max")
+    scatter!(p_summary, valid_queries, min_list, marker=:diamond, label="Min")
+    scatter!(p_summary, valid_queries, max_list, marker=:utriangle, label="Max")
 
     summary_plot_path = joinpath(results_dir, "reward_summary_vs_tree_queries_$(algo_name).png")
     savefig(p_summary, summary_plot_path)
@@ -241,7 +294,7 @@ for algorithm in (SOLVER2, SOLVER4)
                             xlabel="Reward",
                             ylabel="Count",
                             title="[$(algo_name)] tree_queries=$q",
-                            legend=false) for q in tree_queries_list]
+                            legend=false) for q in valid_queries]
 
     rows = ceil(Int, length(tree_queries_list) / 2)
     p_dist = plot(hist_plots..., layout=(rows, 2), size=(1200, 300 * rows))
