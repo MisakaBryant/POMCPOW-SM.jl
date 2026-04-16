@@ -16,6 +16,11 @@ end
 Rollout estimator for information reward belief MDP
 """
 function MCTS.estimate_value(estimator::BasicPOMCP.SolvedFOValue, bmdp::InformationRewardBeliefMDP, ib::InformationBelief{T}, steps::Int) where {T<:ParticleCollection}
-    v = POMDPs.value(estimator.policy, ib.b)
+    ps = particles(ib.b)
+    isempty(ps) && return [0.0, 0.0]
+
+    # SolvedFOValue policies (e.g., ValueIterationPolicy on UnderlyingMDP)
+    # are state-based, so approximate belief value by particle mean.
+    v = mean(POMDPs.value(estimator.policy, s) for s in ps)
     [v, 0.0]
 end

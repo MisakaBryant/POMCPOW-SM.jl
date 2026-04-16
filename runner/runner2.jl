@@ -40,13 +40,37 @@ function trail(policy::Policy, pomdp::POMDP; max_steps=100)
 
     # 使用 stepthrough 逐步仿真
     for (s, a, r, o, b, t, sp, bp) in stepthrough(pomdp, policy, "s,a,r,o,b,t,sp,bp", max_steps=max_steps)
+        belief_terminal = belief_particles_all_terminal(pomdp, b)
+        latent_terminal = isterminal(pomdp, s)
+        if latent_terminal || belief_terminal
+            return (
+                reward=total_reward,
+                belief_terminal=belief_terminal,
+                belief_only_terminal=belief_terminal && !latent_terminal,
+                latent_terminal=latent_terminal,
+                max_steps_reached=false
+            )
+        end
+
         total_reward += r * discount(pomdp)^t  # 累加折扣奖励
         if isterminal(pomdp, sp)
-            break
+            return (
+                reward=total_reward,
+                belief_terminal=false,
+                belief_only_terminal=false,
+                latent_terminal=true,
+                max_steps_reached=false
+            )
         end
     end
-
-    return total_reward
+    @show total_reward
+    return (
+        reward=total_reward,
+        belief_terminal=false,
+        belief_only_terminal=false,
+        latent_terminal=false,
+        max_steps_reached=true
+    )
 end
 
 function summarize_rewards(rewards::Vector{Float64})
@@ -63,30 +87,70 @@ function summarize_rewards(rewards::Vector{Float64})
     )
 end
 
+function belief_particles_all_terminal(pomdp::POMDP, b)
+    try
+        ps = particles(b)
+        isempty(ps) && return false
+        return all(isterminal(pomdp, s) for s in ps)
+    catch
+        return false
+    end
+end
+
+function summarize_trial_terminations(belief_terminal_flags::AbstractVector{Bool},
+                                      belief_only_terminal_flags::AbstractVector{Bool},
+                                      latent_terminal_flags::AbstractVector{Bool},
+                                      max_steps_flags::AbstractVector{Bool})
+    n = length(belief_terminal_flags)
+    belief_terminal_count = count(identity, belief_terminal_flags)
+    belief_only_terminal_count = count(identity, belief_only_terminal_flags)
+    latent_terminal_count = count(identity, latent_terminal_flags)
+    max_steps_count = count(identity, max_steps_flags)
+    return (
+        n=n,
+        belief_terminal_count=belief_terminal_count,
+        belief_terminal_rate=n > 0 ? belief_terminal_count / n : 0.0,
+        belief_only_terminal_count=belief_only_terminal_count,
+        belief_only_terminal_rate=n > 0 ? belief_only_terminal_count / n : 0.0,
+        latent_terminal_count=latent_terminal_count,
+        latent_terminal_rate=n > 0 ? latent_terminal_count / n : 0.0,
+        max_steps_count=max_steps_count,
+        max_steps_rate=n > 0 ? max_steps_count / n : 0.0
+    )
+end
+
 function solve_and_evaluate(solver, pomdp::POMDP; max_steps=100, total=1000, max_retries=5)
     policy = solve(solver, pomdp)
     rewards = fill(NaN, total)
+    belief_terminal_flags = falses(total)
+    belief_only_terminal_flags = falses(total)
+    latent_terminal_flags = falses(total)
+    max_steps_flags = falses(total)
 
     # -------------
-    Threads.@sync for i in 1:total
-        Threads.@spawn begin
+    # Threads.@sync for i in 1:total
+    #     Threads.@spawn begin
     # -------------
-    # for i in 1:total
-    #     begin
+    for i in 1:total
+        begin
     # -------------
             success = false
             tries = 0
             while !success && tries < max_retries
-                # try
+                try
                     tries += 1
                     local_policy = deepcopy(policy)
-                    total_reward = trail(local_policy, pomdp, max_steps=max_steps)
-                    rewards[i] = total_reward
+                    outcome = trail(local_policy, pomdp, max_steps=max_steps)
+                    rewards[i] = outcome.reward
+                    belief_terminal_flags[i] = outcome.belief_terminal
+                    belief_only_terminal_flags[i] = outcome.belief_only_terminal
+                    latent_terminal_flags[i] = outcome.latent_terminal
+                    max_steps_flags[i] = outcome.max_steps_reached
                     success = true
-                # catch e
+                catch e
                 #     @warn "Error in thread $i: $e"
                 #     Base.show_backtrace(stderr, catch_backtrace())
-                # end
+                end
             end
             if !success
                 @warn "Trial $i failed after $max_retries retries."
@@ -94,10 +158,16 @@ function solve_and_evaluate(solver, pomdp::POMDP; max_steps=100, total=1000, max
         end
     end
 
-    valid_rewards = collect(filter(!isnan, rewards))
+    valid_indices = findall(!isnan, rewards)
+    valid_rewards = rewards[valid_indices]
     isempty(valid_rewards) && error("All trials failed. No valid reward collected.")
 
-    return summarize_rewards(valid_rewards), valid_rewards
+    terminal_stats = summarize_trial_terminations(belief_terminal_flags[valid_indices],
+                                                  belief_only_terminal_flags[valid_indices],
+                                                  latent_terminal_flags[valid_indices],
+                                                  max_steps_flags[valid_indices])
+
+    return summarize_rewards(valid_rewards), valid_rewards, terminal_stats
 end
 
 function parse_solver_modes(args::Vector{String})
@@ -132,12 +202,12 @@ end
 # similarity_threshold = 0.99
 # tree_queries_list = [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000]
 
-pomdp = SubHuntPOMDP()
-c = 17
-k_o = 6.0
-alpha_o = 1/100
-similarity_threshold = 0.99
-tree_queries_list = [5000, 10000, 20000, 50000, 80000]
+# pomdp = SubHuntPOMDP()
+# c = 17
+# k_o = 6.0
+# alpha_o = 1/100
+# similarity_threshold = 0.99
+# tree_queries_list = [5000, 10000, 20000, 50000, 80000]
 
 # pomdp = gen_lasertag(rng=MersenneTwister(7), robot_position_known=true)
 # c = 26 
@@ -153,14 +223,14 @@ tree_queries_list = [5000, 10000, 20000, 50000, 80000]
 # k_o = 5
 # alpha_o = 1/100
 
-# pomdp = LunarLander()
-# c = 1
-# k_o = 10
-# alpha_o = 0.5
-# k_a = 10
-# alpha_a = 0.5
-# similarity_threshold = 0.99
-# tree_queries_list = [500, 1000, 2000, 3000, 5000, 8000, 10000]
+pomdp = LunarLander()
+c = 1
+k_o = 10
+alpha_o = 0.5
+k_a = 10
+alpha_a = 0.5
+similarity_threshold = 0.99
+tree_queries_list = [500, 1000, 2000, 3000, 5000, 8000, 10000]
 
 # pomdp = WindFarmPOMDP()
 # c = 1
@@ -170,14 +240,13 @@ tree_queries_list = [5000, 10000, 20000, 50000, 80000]
 # alpha_o = 0.3
 # similarity_threshold = 0.99
 
-# LightDark1D 需要注释掉
-vs = ValueIterationSolver()
-if !isdefined(Main, :vp) || vp.mdp != pomdp
-    mdp = UnderlyingMDP(pomdp)
-    vp = solve(vs, mdp)
-end
+# LightDark1D Lunarlander 需要注释掉
+# vs = ValueIterationSolver()
+# if !isdefined(Main, :vp) || vp.mdp != pomdp
+#     mdp = UnderlyingMDP(pomdp)
+#     vp = solve(vs, mdp)
+# end
 
-rng = MersenneTwister(13)
 @show c, k_o, alpha_o, similarity_threshold
 time_limit_list = [0.01, 0.1, 1.0, 5.0, 10.0]
 total = 1000
@@ -203,13 +272,13 @@ for solver_mode in selected_solver_modes
                         final_criterion=MaxTries(),
                         max_depth=20,
                         max_time=100,
-                        enable_action_pw=false, # 对于离散动作场景
-                        # enable_action_pw=true,  # |
-                        # k_action=k_a,           # | 对于连续动作场景
-                        # alpha_action=alpha_a,   # |
+                        # enable_action_pw=false, # 对于离散动作场景
+                        enable_action_pw=true,  # |
+                        k_action=k_a,           # | 对于连续动作场景
+                        alpha_action=alpha_a,   # |
                         k_observation=k_o,
                         alpha_observation=alpha_o,
-                        estimate_value=FOValue(vp),
+                        # estimate_value=FOValue(vp),
                         check_repeat_obs=true,
                         rng=algo_rng,
                         similarity_threshold=similarity_threshold,
@@ -220,14 +289,14 @@ for solver_mode in selected_solver_modes
                         final_criterion=MaxTries(),
                         max_depth=20,
                         max_time=100,
-                        enable_action_pw=false,  # 对于离散动作场景
-                        # enable_action_pw=true,  # |
-                        # k_action=k_a,           # | 对于连续动作场景
-                        # alpha_action=alpha_a,   # |
+                        # enable_action_pw=false,  # 对于离散动作场景
+                        enable_action_pw=true,  # |
+                        k_action=k_a,           # | 对于连续动作场景
+                        alpha_action=alpha_a,   # |
                         k_observation=k_o,
                         alpha_observation=alpha_o,
-                        estimate_value=FOValue(vp),
-                        check_repeat_obs=true,
+                        # estimate_value=FOValue(vp),
+                        check_repeat_obs=false,
                         rng=algo_rng,
                         similarity_threshold=similarity_threshold,
                         algorithm=SOLVER4)
@@ -237,11 +306,18 @@ for solver_mode in selected_solver_modes
 
         stats = nothing
         rewards = Float64[]
-        stats, rewards = solve_and_evaluate(solver, pomdp, total=total)
+        terminal_stats = nothing
+        stats, rewards, terminal_stats = solve_and_evaluate(solver, pomdp, total=total)
 
 
         @info @sprintf("algorithm=%s, tree_queries=%d, n=%d, min=%.4f, max=%.4f, mean=%.4f, var=%.4f, std=%.4f, se=%.4f",
                        algo_name, tree_queries, stats.n, stats.min, stats.max, stats.mean, stats.var, stats.std, stats.se)
+        @info @sprintf("termination_stats tree_queries=%d, belief_terminal=%d(%.2f%%), belief_only_terminal=%d(%.2f%%), latent_terminal=%d(%.2f%%), max_steps=%d(%.2f%%)",
+                       tree_queries,
+                       terminal_stats.belief_terminal_count, 100 * terminal_stats.belief_terminal_rate,
+                       terminal_stats.belief_only_terminal_count, 100 * terminal_stats.belief_only_terminal_rate,
+                       terminal_stats.latent_terminal_count, 100 * terminal_stats.latent_terminal_rate,
+                       terminal_stats.max_steps_count, 100 * terminal_stats.max_steps_rate)
         push!(stats_table, (
             tree_queries=tree_queries,
             n=stats.n,
@@ -250,7 +326,11 @@ for solver_mode in selected_solver_modes
             mean=stats.mean,
             var=stats.var,
             std=stats.std,
-            se=stats.se
+            se=stats.se,
+            belief_terminal_count=terminal_stats.belief_terminal_count,
+            belief_terminal_rate=terminal_stats.belief_terminal_rate,
+            belief_only_terminal_count=terminal_stats.belief_only_terminal_count,
+            belief_only_terminal_rate=terminal_stats.belief_only_terminal_rate
         ))
         all_rewards_by_query[tree_queries] = rewards
     end
@@ -262,10 +342,12 @@ for solver_mode in selected_solver_modes
 
     stats_csv_path = joinpath(results_dir, "reward_stats_by_tree_queries_$(algo_name).csv")
     open(stats_csv_path, "w") do io
-        write(io, "tree_queries,n,min,max,mean,var,std,se\n")
+        write(io, "tree_queries,n,min,max,mean,var,std,se,belief_terminal_count,belief_terminal_rate,belief_only_terminal_count,belief_only_terminal_rate\n")
         for row in stats_table
-            write(io, @sprintf("%d,%d,%.10f,%.10f,%.10f,%.10f,%.10f,%.10f\n",
-                               row.tree_queries, row.n, row.min, row.max, row.mean, row.var, row.std, row.se))
+            write(io, @sprintf("%d,%d,%.10f,%.10f,%.10f,%.10f,%.10f,%.10f,%d,%.10f,%d,%.10f\n",
+                               row.tree_queries, row.n, row.min, row.max, row.mean, row.var, row.std, row.se,
+                               row.belief_terminal_count, row.belief_terminal_rate,
+                               row.belief_only_terminal_count, row.belief_only_terminal_rate))
         end
     end
 

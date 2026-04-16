@@ -53,7 +53,7 @@ function action_info(p::IPFTPlanner, s; tree_in_info=false)
         start_us = CPUtime_us()
         for j = 1:p.solver.n_iterations
             nquery += 1
-            @debug "Start simulation $j"
+            # @debug "Start simulation $j"
             simulate(p, snode, s, p.solver.depth)
             if CPUtime_us() - start_us >= p.solver.max_time * 1e6
                 break

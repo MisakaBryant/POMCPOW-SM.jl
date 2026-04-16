@@ -29,6 +29,6 @@ RUN sed -i 's|http://deb.debian.org/debian|https://mirrors.tuna.tsinghua.edu.cn/
 # 安装 Project.toml 中的依赖包
 RUN julia --project=. -e 'import Pkg; Pkg.instantiate()'
 
-# docker run --name pomcpow-sm -it -v .:/app pomcpow-sm:1.0 /bin/bash
+# docker run --name misaka_pomcpowsm -it -v .:/app pomcpowsm:1.0 /bin/bash
 
 # xvfb-run julia --threads 24 --project=. runner/runner2.jl
